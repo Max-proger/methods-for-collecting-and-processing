@@ -1,6 +1,10 @@
-import pandas as pd
+from pprint import pprint
+
 import requests
 from bs4 import BeautifulSoup
+from pymongo import MongoClient, errors
+
+client = MongoClient("127.0.0.1", 27017)
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
@@ -9,8 +13,8 @@ url = "https://hh.ru"
 params = {"area": "1", "items_on_page": "20", "text": "Python", "search_period": "30", "page": "0"}
 
 last_page = 100
-
-vacancies = []
+db = client["vacancies_database"]
+vacancies = db.vacancies
 
 for page in range(0, last_page + 1):
     params["page"] = str(page)
@@ -19,7 +23,6 @@ for page in range(0, last_page + 1):
     vacancies_list = dom.find_all("div", {"class": "vacancy-serp-item"})
 
     for vacancy in vacancies_list:
-        vacancies_data = {}
         vacansy_name = vacancy.find("a", {"data-qa": "vacancy-serp__vacancy-title"}).getText().replace("\xa0", " ")
         vacansy_link = vacancy.find("a", {"data-qa": "vacancy-serp__vacancy-title"}).get("href")
 
@@ -50,13 +53,24 @@ for page in range(0, last_page + 1):
             salary_max = int(salary[1])
             currency_of_salary = salary[2]
 
-        vacancies_data["name"] = vacansy_name
-        vacancies_data["link"] = vacansy_link
-        vacancies_data["salary_min"] = salary_min
-        vacancies_data["salary_max"] = salary_max
-        vacancies_data["currency_of_salary"] = currency_of_salary
-        vacancies_data["site_name"] = "hh.ru"
-        vacancies.append(vacancies_data)
+        try:
+            vacancies.insert_one(
+                {
+                    "_id": vacansy_link,
+                    "name": vacansy_name,
+                    "link": vacansy_link,
+                    "salary_min": salary_min,
+                    "salary_max": salary_max,
+                    "currency_of_salary": currency_of_salary,
+                    "site_name": "hh.ru",
+                }
+            )
+        except errors.DuplicateKeyError:
+            continue
 
-df = pd.DataFrame(vacancies)
-df.to_csv("hh.csv", encoding="utf-8-sig")
+desired_salary = 150000
+
+for job_vacancy in vacancies.find(
+    {"$or": [{"salary_min": {"$gte": desired_salary}}, {"salary_max": {"$gte": desired_salary}}]}
+):
+    pprint(job_vacancy)
